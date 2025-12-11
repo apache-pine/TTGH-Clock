@@ -34,24 +34,6 @@
             color: #9ca3af;
         }
 
-        .controls {
-            margin-top: 1rem;
-        }
-
-        .controls button {
-            padding: 0.4rem 0.8rem;
-            border-radius: 0.375rem;
-            border: 1px solid #4b5563;
-            background: #111827;
-            color: #e5e7eb;
-            font-size: 0.9rem;
-            cursor: pointer;
-        }
-
-        .controls button:hover {
-            background: #1f2937;
-        }
-
         /* Bottom-left corner controls */
         .corner-controls {
             position: fixed;
@@ -168,13 +150,11 @@
 <body>
 <div class="wrapper">
     <div id="countdown">--L+--H</div>
-    <div class="controls">
-        <button id="lock-lunch-btn" type="button">Freeze Checkpoint</button>
-    </div>
 </div>
 
 <!-- Bottom-left small controls -->
 <div class="corner-controls">
+    <button id="lock-lunch-btn" type="button">Freeze Checkpoint</button>
     <button id="reset-lunch-btn" type="button">Reset Checkpoint</button>
     <button id="set-lunch-manual-btn" type="button">Manually Set Checkpoint</button>
 </div>
