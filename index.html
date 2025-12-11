@@ -75,6 +75,94 @@
             background: #111827;
             color: #e5e7eb;
         }
+
+        .settings-button {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            border-radius: 999px;
+            border: 1px solid #4b5563;
+            background: #020617;
+            color: #e5e7eb;
+            width: 2rem;
+            height: 2rem;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-button:hover {
+            background: #111827;
+        }
+
+        .settings-panel {
+            position: fixed;
+            top: 3.5rem;
+            right: 1rem;
+            background: #020617;
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            padding: 0.75rem 0.9rem;
+            font-size: 0.85rem;
+            color: #e5e7eb;
+            min-width: 180px;
+            z-index: 50;
+        }
+
+        .settings-panel.hidden {
+            display: none;
+        }
+
+        .settings-header {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .settings-row label {
+            flex: 1;
+        }
+
+        .settings-row input[type="time"] {
+            flex: 1;
+            background: #020617;
+            border: 1px solid #4b5563;
+            border-radius: 0.375rem;
+            color: #e5e7eb;
+            padding: 0.15rem 0.3rem;
+            font-size: 0.8rem;
+        }
+
+        .settings-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.4rem;
+            margin-top: 0.4rem;
+        }
+
+        .settings-actions button {
+            padding: 0.25rem 0.6rem;
+            border-radius: 0.375rem;
+            border: 1px solid #4b5563;
+            background: #111827;
+            color: #e5e7eb;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .settings-actions button:hover {
+            background: #1f2937;
+        }
     </style>
 </head>
 <body>
@@ -91,10 +179,32 @@
     <button id="set-lunch-manual-btn" type="button">Manually Set Checkpoint</button>
 </div>
 
+<!-- Top-right settings gear -->
+<button id="settings-btn" class="settings-button" type="button" aria-label="Settings">⚙</button>
+
+<!-- Settings panel -->
+<div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-header">Utility Settings</div>
+    <div class="settings-row">
+        <label for="lunch-time">L</label>
+        <input id="lunch-time" type="time">
+    </div>
+    <div class="settings-row">
+        <label for="home-time">H</label>
+        <input id="home-time" type="time">
+    </div>
+    <div class="settings-actions">
+        <button id="settings-save" type="button">Save</button>
+        <button id="settings-cancel" type="button">Cancel</button>
+    </div>
+</div>
+
 <script>
-    const NOON_MINUTES = 12 * 60; // 12:00
-    const FIVE_PM_MINUTES = 17 * 60; // 17:00
-    const LUNCH_LOCK_KEY = "lunchLock"; // key in localStorage
+    const DEFAULT_LUNCH_MINUTES = 12 * 60;   // 12:00
+    const DEFAULT_HOME_MINUTES  = 17 * 60;   // 17:00 (5 pm)
+    const LUNCH_LOCK_KEY        = "lunchLock";   // key in localStorage
+    const SETTINGS_KEY          = "lhSettings";
+
 
     // Format integer with explicit sign for positive numbers
     function formatWithSign(minutes) {
@@ -126,6 +236,78 @@
             hour: Number(get("hour")),
             minute: Number(get("minute"))
         };
+    }
+
+    // Convert "HH:MM" into minutes since midnight
+    function timeStringToMinutes(str) {
+        if (!str) return null;
+        const [hStr, mStr] = str.split(":");
+        const h = Number(hStr);
+        const m = Number(mStr);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+        const total = h * 60 + m;
+        if (total < 0 || total >= 24 * 60) return null;
+        return total;
+    }
+
+    // Convert minutes since midnight into "HH:MM"
+    function minutesToTimeString(minutes) {
+        if (!Number.isFinite(minutes)) {
+            return "12:00";
+        }
+        let m = minutes % (24 * 60);
+        if (m < 0) m += 24 * 60;
+        const h = Math.floor(m / 60);
+        const min = m % 60;
+        return h.toString().padStart(2, "0") + ":" + min.toString().padStart(2, "0");
+    }
+
+    // Get today's settings (L and H minutes), falling back to defaults
+    function getSettingsForToday(pac) {
+        const todayKey = getPacificDateKey(pac);
+
+        try {
+            const raw = localStorage.getItem(SETTINGS_KEY);
+            if (!raw) {
+                return {
+                    date: todayKey,
+                    lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                    homeMinutes: DEFAULT_HOME_MINUTES
+                };
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!parsed || parsed.date !== todayKey) {
+                // Old day or malformed, ignore
+                return {
+                    date: todayKey,
+                    lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                    homeMinutes: DEFAULT_HOME_MINUTES
+                };
+            }
+
+            return {
+                date: parsed.date,
+                lunchMinutes: Number.isFinite(parsed.lunchMinutes) ? parsed.lunchMinutes : DEFAULT_LUNCH_MINUTES,
+                homeMinutes: Number.isFinite(parsed.homeMinutes) ? parsed.homeMinutes : DEFAULT_HOME_MINUTES
+            };
+        } catch (e) {
+            return {
+                date: todayKey,
+                lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                homeMinutes: DEFAULT_HOME_MINUTES
+            };
+        }
+    }
+
+    function saveSettingsForToday(pac, lunchMinutes, homeMinutes) {
+        const todayKey = getPacificDateKey(pac);
+        const payload = {
+            date: todayKey,
+            lunchMinutes,
+            homeMinutes
+        };
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
     }
 
     // Build a YYYY-MM-DD string for Pacific date
@@ -163,26 +345,31 @@
 
         const nowMinutes = pac.hour * 60 + pac.minute;
 
-        // LUNCH (L) SIDE
+        // Read today's L/H settings
+        const settings = getSettingsForToday(pac);
+        const lunchMinutes = settings.lunchMinutes;
+        const homeMinutes  = settings.homeMinutes;
+
+        // LUNCH (L) SIDE, still respecting any lock
         const stored = getLunchLock();
-        let diffToNoon;
+        let diffToLunch;
 
         if (stored && stored.date === todayKey) {
             // Frozen value for today
-            diffToNoon = stored.minutes;
+            diffToLunch = stored.minutes;
         } else {
             // No stored value or from previous day
             if (stored && stored.date !== todayKey) {
                 clearLunchLock();
             }
-            diffToNoon = NOON_MINUTES - nowMinutes;
+            diffToLunch = lunchMinutes - nowMinutes;
         }
 
-        // HOME (H) SIDE
-        const diffToFive = FIVE_PM_MINUTES - nowMinutes;
+        // HOME (H) SIDE, always live
+        const diffToHome = homeMinutes - nowMinutes;
 
-        const noonPart = formatWithSign(diffToNoon) + "L";
-        const fivePart = formatWithSign(diffToFive) + "H";
+        const noonPart = formatWithSign(diffToLunch) + "L";
+        const fivePart = formatWithSign(diffToHome) + "H";
 
         document.getElementById("countdown").textContent = noonPart + fivePart;
     }
@@ -191,9 +378,13 @@
         const pac = getPacificComponents();
         const todayKey = getPacificDateKey(pac);
         const nowMinutes = pac.hour * 60 + pac.minute;
-        const diffToNoon = NOON_MINUTES - nowMinutes;
 
-        setLunchLock(todayKey, diffToNoon);
+        const settings = getSettingsForToday(pac);
+        const lunchMinutes = settings.lunchMinutes;
+
+        const diffToLunch = lunchMinutes - nowMinutes;
+
+        setLunchLock(todayKey, diffToLunch);
         updateCountdown();
     }
 
@@ -227,6 +418,59 @@
     document.getElementById("lock-lunch-btn").addEventListener("click", lockLunchNow);
     document.getElementById("reset-lunch-btn").addEventListener("click", resetLunchForToday);
     document.getElementById("set-lunch-manual-btn").addEventListener("click", setLunchManual);
+
+    const settingsBtn      = document.getElementById("settings-btn");
+    const settingsPanel    = document.getElementById("settings-panel");
+    const lunchTimeInput   = document.getElementById("lunch-time");
+    const homeTimeInput    = document.getElementById("home-time");
+    const settingsSaveBtn  = document.getElementById("settings-save");
+    const settingsCancelBtn = document.getElementById("settings-cancel");
+
+    function openSettingsPanel() {
+        const pac = getPacificComponents();
+        const settings = getSettingsForToday(pac);
+
+        lunchTimeInput.value = minutesToTimeString(settings.lunchMinutes);
+        homeTimeInput.value  = minutesToTimeString(settings.homeMinutes);
+
+        settingsPanel.classList.remove("hidden");
+    }
+
+    function closeSettingsPanel() {
+        settingsPanel.classList.add("hidden");
+    }
+
+    function saveSettingsFromPanel() {
+        const lunchStr = lunchTimeInput.value;
+        const homeStr  = homeTimeInput.value;
+
+        const lunchMinutes = timeStringToMinutes(lunchStr);
+        const homeMinutes  = timeStringToMinutes(homeStr);
+
+        if (lunchMinutes === null || homeMinutes === null) {
+            alert("Please enter valid times for both L and H.");
+            return;
+        }
+
+        const pac = getPacificComponents();
+        saveSettingsForToday(pac, lunchMinutes, homeMinutes);
+
+        // When times change, it makes sense to clear any existing lunch lock
+        clearLunchLock();
+
+        closeSettingsPanel();
+        updateCountdown();
+    }
+
+    settingsBtn.addEventListener("click", () => {
+        if (settingsPanel.classList.contains("hidden")) {
+            openSettingsPanel();
+        } else {
+            closeSettingsPanel();
+        }
+    });
+    settingsSaveBtn.addEventListener("click", saveSettingsFromPanel);
+    settingsCancelBtn.addEventListener("click", closeSettingsPanel);
 
     function tick() {
         // Update display
