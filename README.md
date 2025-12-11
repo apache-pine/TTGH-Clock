@@ -1,2 +1,2 @@
 # TTGH-Clock
-A website with a countdown for lunch and home
+A website with a session utility clock, showing a checkpoint and endpoint.
