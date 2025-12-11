@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lunch / Home Countdown</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .wrapper {
+            text-align: center;
+        }
+
+        #countdown {
+            font-size: 3rem;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        .note {
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            color: #9ca3af;
+        }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <div id="countdown">--L+--H</div>
+    <div class="note">Times are in Pacific (auto DST)</div>
+</div>
+
+<script>
+    // Format integer with explicit sign for positive numbers
+    function formatWithSign(minutes) {
+        if (minutes > 0) return "+" + minutes;
+        return minutes.toString(); // handles 0 and negatives
+    }
+
+    // Get current time in America/Los_Angeles as year, month, day, hour, minute
+    function getPacificComponents() {
+        const now = new Date();
+
+        // Use Intl to convert to Pacific with DST awareness
+        const formatter = new Intl.DateTimeFormat("en-US", {
+            timeZone: "America/Los_Angeles",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        });
+
+        const parts = formatter.formatToParts(now);
+        const get = type => parts.find(p => p.type === type).value;
+
+        return {
+            year: Number(get("year")),
+            month: Number(get("month")),
+            day: Number(get("day")),
+            hour: Number(get("hour")),
+            minute: Number(get("minute"))
+        };
+    }
+
+    function updateCountdown() {
+        const pac = getPacificComponents();
+
+        // Minutes since midnight Pacific
+        const nowMinutes = pac.hour * 60 + pac.minute;
+
+        const NOON_MINUTES = 12 * 60; // 12:00
+        const FIVE_PM_MINUTES = 17 * 60; // 17:00
+
+        // Difference in minutes from current time to today's noon and 5 PM
+        const diffToNoon = NOON_MINUTES - nowMinutes;
+        const diffToFive = FIVE_PM_MINUTES - nowMinutes;
+
+        const noonPart = formatWithSign(diffToNoon) + "L";
+        const fivePart = formatWithSign(diffToFive) + "H";
+
+        document.getElementById("countdown").textContent = noonPart + fivePart;
+    }
+
+    // Run once immediately
+    updateCountdown();
+
+    // Update every minute
+    setInterval(updateCountdown, 60 * 1000);
+</script>
+</body>
+</html>
