@@ -166,8 +166,16 @@
 <div id="settings-panel" class="settings-panel hidden">
     <div class="settings-header">Utility Settings</div>
     <div class="settings-row">
+        <label for="break1-time">B1</label>
+        <input id="break1-time" type="time">
+    </div>
+    <div class="settings-row">
         <label for="lunch-time">L</label>
         <input id="lunch-time" type="time">
+    </div>
+    <div class="settings-row">
+        <label for="break2-time">B2</label>
+        <input id="break2-time" type="time">
     </div>
     <div class="settings-row">
         <label for="home-time">H</label>
@@ -180,7 +188,9 @@
 </div>
 
 <script>
+    const DEFAULT_BREAK1_MINUTES = 10 * 60;  // 10:00
     const DEFAULT_LUNCH_MINUTES = 12 * 60;   // 12:00
+    const DEFAULT_BREAK2_MINUTES = 15 * 60;  // 15:00 (3 pm)
     const DEFAULT_HOME_MINUTES  = 17 * 60;   // 17:00 (5 pm)
     const LUNCH_LOCK_KEY        = "lunchLock";   // key in localStorage
     const SETTINGS_KEY          = "lhSettings";
@@ -251,7 +261,9 @@
             if (!raw) {
                 return {
                     date: todayKey,
+                    break1Minutes: DEFAULT_BREAK1_MINUTES,
                     lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                    break2Minutes: DEFAULT_BREAK2_MINUTES,
                     homeMinutes: DEFAULT_HOME_MINUTES
                 };
             }
@@ -261,30 +273,38 @@
                 // Old day or malformed, ignore
                 return {
                     date: todayKey,
+                    break1Minutes: DEFAULT_BREAK1_MINUTES,
                     lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                    break2Minutes: DEFAULT_BREAK2_MINUTES,
                     homeMinutes: DEFAULT_HOME_MINUTES
                 };
             }
 
             return {
                 date: parsed.date,
+                break1Minutes: Number.isFinite(parsed.break1Minutes) ? parsed.break1Minutes : DEFAULT_BREAK1_MINUTES,
                 lunchMinutes: Number.isFinite(parsed.lunchMinutes) ? parsed.lunchMinutes : DEFAULT_LUNCH_MINUTES,
+                break2Minutes: Number.isFinite(parsed.break2Minutes) ? parsed.break2Minutes : DEFAULT_BREAK2_MINUTES,
                 homeMinutes: Number.isFinite(parsed.homeMinutes) ? parsed.homeMinutes : DEFAULT_HOME_MINUTES
             };
         } catch (e) {
             return {
                 date: todayKey,
+                break1Minutes: DEFAULT_BREAK1_MINUTES,
                 lunchMinutes: DEFAULT_LUNCH_MINUTES,
+                break2Minutes: DEFAULT_BREAK2_MINUTES,
                 homeMinutes: DEFAULT_HOME_MINUTES
             };
         }
     }
 
-    function saveSettingsForToday(pac, lunchMinutes, homeMinutes) {
+    function saveSettingsForToday(pac, break1Minutes, lunchMinutes, break2Minutes, homeMinutes) {
         const todayKey = getPacificDateKey(pac);
         const payload = {
             date: todayKey,
+            break1Minutes,
             lunchMinutes,
+            break2Minutes,
             homeMinutes
         };
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
@@ -327,8 +347,12 @@
 
         // Read today's L/H settings
         const settings = getSettingsForToday(pac);
+        const break1Minutes = settings.break1Minutes;
         const lunchMinutes = settings.lunchMinutes;
+        const break2Minutes = settings.break2Minutes;
         const homeMinutes  = settings.homeMinutes;
+
+        const diffToB1 = break1Minutes - nowMinutes;
 
         // LUNCH (L) SIDE, still respecting any lock
         const stored = getLunchLock();
@@ -345,13 +369,17 @@
             diffToLunch = lunchMinutes - nowMinutes;
         }
 
+        const diffToB2 = break2Minutes - nowMinutes;
+
         // HOME (H) SIDE, always live
         const diffToHome = homeMinutes - nowMinutes;
 
-        const noonPart = formatWithSign(diffToLunch) + "L";
-        const fivePart = formatWithSign(diffToHome) + "H";
+        const b1Part = formatWithSign(diffToB1) + "B1";
+        const lunchPart = formatWithSign(diffToLunch) + "B2/L";
+        const b3Part = formatWithSign(diffToB2) + "B3";
+        const hPart = formatWithSign(diffToHome) + "H";
 
-        document.getElementById("countdown").textContent = noonPart + fivePart;
+        document.getElementById("countdown").textContent = b1Part + lunchPart + b3Part + hPart;
     }
 
     function lockLunchNow() {
@@ -401,7 +429,9 @@
 
     const settingsBtn      = document.getElementById("settings-btn");
     const settingsPanel    = document.getElementById("settings-panel");
+    const break1TimeInput = document.getElementById("break1-time");
     const lunchTimeInput   = document.getElementById("lunch-time");
+    const break2TimeInput = document.getElementById("break2-time");
     const homeTimeInput    = document.getElementById("home-time");
     const settingsSaveBtn  = document.getElementById("settings-save");
     const settingsCancelBtn = document.getElementById("settings-cancel");
@@ -410,7 +440,9 @@
         const pac = getPacificComponents();
         const settings = getSettingsForToday(pac);
 
+        break1TimeInput.value = minutesToTimeString(settings.break1Minutes);
         lunchTimeInput.value = minutesToTimeString(settings.lunchMinutes);
+        break2TimeInput.value = minutesToTimeString(settings.break2Minutes);
         homeTimeInput.value  = minutesToTimeString(settings.homeMinutes);
 
         settingsPanel.classList.remove("hidden");
@@ -421,19 +453,24 @@
     }
 
     function saveSettingsFromPanel() {
+        const b1Str = break1TimeInput.value;
         const lunchStr = lunchTimeInput.value;
+        const b2Str = break2TimeInput.value;
         const homeStr  = homeTimeInput.value;
 
+        
+        const break1Minutes = timeStringToMinutes(b1Str);
         const lunchMinutes = timeStringToMinutes(lunchStr);
+        const break2Minutes = timeStringToMinutes(b2Str);
         const homeMinutes  = timeStringToMinutes(homeStr);
 
-        if (lunchMinutes === null || homeMinutes === null) {
-            alert("Please enter valid times for both L and H.");
+        if (break1Minutes === null || break2Minutes === null || lunchMinutes === null || homeMinutes === null) {
+            alert("Please enter valid times for B1, B2, L, and H.");
             return;
         }
 
         const pac = getPacificComponents();
-        saveSettingsForToday(pac, lunchMinutes, homeMinutes);
+        saveSettingsForToday(pac, break1Minutes, lunchMinutes, break2Minutes, homeMinutes);
 
         // When times change, it makes sense to clear any existing lunch lock
         clearLunchLock();
