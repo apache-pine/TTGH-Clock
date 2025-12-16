@@ -454,6 +454,16 @@
   let ambientBubbles = [];
 
   // =============================
+  // Gravel + Decor (cached + depth-sorted)
+  // =============================
+  const GRAVEL_BAND_FRAC = 0.1;   // bottom 16% of tank
+  const GRAVEL_DENSITY = 30;     // higher = more pebbles (tune)
+  let gravelCanvas = null;
+  let gravelCtx = null;
+
+  let decor = []; // { kind, x, y, scale, depth, layer } layer: "back"|"mid"|"front"
+
+  // =============================
   // Canvas setup
   // =============================
   const wrap = document.getElementById("wrap");
@@ -469,14 +479,284 @@
     canvas._dpr = dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  window.addEventListener("resize", resizeCanvas, { passive: true });
-  resizeCanvas();
 
   const W = () => canvas.width / canvas._dpr;
   const H = () => canvas.height / canvas._dpr;
 
+  window.addEventListener("resize", () => {
+    resizeCanvas();
+    initAmbientBubbles();
+    rebuildSceneryCaches();
+  }, { passive: true });
+
+  resizeCanvas();
   initAmbientBubbles();
-  window.addEventListener("resize", () => initAmbientBubbles(), { passive: true });
+  rebuildSceneryCaches();
+
+
+  function rebuildSceneryCaches() {
+    buildGravelCache();
+    initDecor();
+  }
+
+  function buildGravelCache() {
+    const w = Math.floor(W());
+    const h = Math.floor(H());
+    const bandH = Math.floor(h * GRAVEL_BAND_FRAC);
+
+    gravelCanvas = document.createElement("canvas");
+    gravelCanvas.width = w;
+    gravelCanvas.height = h;
+    gravelCtx = gravelCanvas.getContext("2d");
+
+    // Clear
+    gravelCtx.clearRect(0, 0, w, h);
+
+    const yTop = h - bandH;
+
+    // Soft transition shadow where gravel meets water
+    {
+      const grad = gravelCtx.createLinearGradient(0, yTop - 24, 0, yTop + 18);
+      grad.addColorStop(0, "rgba(0,0,0,0)");
+      grad.addColorStop(1, "rgba(0,0,0,0.28)");
+      gravelCtx.fillStyle = grad;
+      gravelCtx.fillRect(0, yTop - 24, w, 42);
+    }
+
+    // Pebbles (pre-rendered, cheap at runtime)
+    // Count scales with area
+    const area = w * bandH;
+    const pebCount = Math.floor(area / 260 * GRAVEL_DENSITY);
+
+    gravelCtx.save();
+    gravelCtx.globalCompositeOperation = "source-over";
+
+    for (let i = 0; i < pebCount; i++) {
+      const x = rand(0, w);
+      const y = rand(yTop, h);
+
+      // Pebble size varies slightly
+      const r = rand(2.2, 6.5);
+
+      // Bright blue variation but still cohesive
+      const hue = rand(190, 205);     // blue-cyan range
+      const sat = rand(70, 95);
+      const lit = rand(45, 62);
+
+      // Base pebble
+      gravelCtx.beginPath();
+      gravelCtx.ellipse(x, y, r * rand(0.9, 1.25), r * rand(0.7, 1.1), rand(0, Math.PI), 0, Math.PI * 2);
+      gravelCtx.fillStyle = `hsl(${hue} ${sat}% ${lit}%)`;
+      gravelCtx.fill();
+
+      // Subtle highlight
+      gravelCtx.globalAlpha = 0.22;
+      gravelCtx.beginPath();
+      gravelCtx.arc(x - r * 0.25, y - r * 0.25, r * 0.35, 0, Math.PI * 2);
+      gravelCtx.fillStyle = "rgba(255,255,255,1)";
+      gravelCtx.fill();
+      gravelCtx.globalAlpha = 1;
+    }
+
+    gravelCtx.restore();
+  }
+
+  function initDecor() {
+    decor = [];
+
+    const w = W(), h = H();
+    const bandH = h * GRAVEL_BAND_FRAC;
+    const floorY = h - bandH * 0.35;
+
+        // ---------- overlap control ----------
+      const placed = []; // {x,y,r,layer,kind}
+
+      function layerFactor(a, b) {
+        // same layer = strict, different = more forgiving
+        return (a === b) ? 1.0 : 0.55;
+      }
+
+      function canPlace(x, y, r, layer, kind) {
+        for (const p of placed) {
+          const dx = x - p.x;
+          const dy = y - p.y;
+
+          const otherKind = p.kind;
+
+          // If either item is coral, use anisotropic spacing (ellipse)
+          if (kind === "coral" || otherKind === "coral") {
+            // horizontal spacing is the big one for coral
+            const sameLayer = (layer === p.layer);
+
+            // Be much less forgiving across layers for coral, or they’ll stack visually
+            const layerMul = sameLayer ? 1.0 : 0.85;
+
+            // r here should represent "horizontal claim" for coral
+            const minX = (r + p.r) * 1.15 * layerMul;
+
+            // allow a bit of vertical overlap since they sit on the same floor band anyway
+            const minY = (r + p.r) * 0.35;
+
+            // ellipse test: (dx/minX)^2 + (dy/minY)^2 >= 1
+            const nx = dx / minX;
+            const ny = dy / minY;
+            if ((nx * nx + ny * ny) < 1) return false;
+
+            continue;
+          }
+
+          // Stone vs stone: standard circle spacing
+          const minD = (r + p.r) * layerFactor(layer, p.layer);
+          if ((dx * dx + dy * dy) < (minD * minD)) return false;
+        }
+        return true;
+      }
+
+      function findSpot(r, layer, kind, xMin, xMax, yMin, yMax, tries = 1000) {
+        let best = null;
+        let bestScore = -Infinity;
+
+        for (let t = 0; t < tries; t++) {
+          const x = rand(xMin, xMax);
+          const y = rand(yMin, yMax);
+
+          // If it fits, take it immediately (fast path)
+          if (canPlace(x, y, r, layer, kind)) {
+            placed.push({ x, y, r, layer, kind });
+            return { x, y };
+          }
+
+          // Otherwise score it by clearance so fallback is smart, not random
+          let minScore = Infinity;
+
+          for (const p of placed) {
+            const dx = x - p.x;
+            const dy = y - p.y;
+
+            // Use the same spacing model as canPlace for scoring
+            if (kind === "coral" || p.kind === "coral") {
+              const sameLayer = (layer === p.layer);
+              const layerMul = sameLayer ? 1.0 : 0.85;
+
+              const minX = (r + p.r) * 1.15 * layerMul;
+              const minY = (r + p.r) * 0.35;
+
+              const nx = dx / minX;
+              const ny = dy / minY;
+
+              // >1 is good, <1 is overlap. Higher is better.
+              const score = (nx * nx + ny * ny);
+              if (score < minScore) minScore = score;
+            } else {
+              const minD = (r + p.r) * layerFactor(layer, p.layer);
+              const d2 = dx*dx + dy*dy;
+              const score = d2 / (minD * minD);
+              if (score < minScore) minScore = score;
+            }
+          }
+
+          if (minScore > bestScore) {
+            bestScore = minScore;
+            best = { x, y };
+          }
+        }
+
+        // Fallback: place the best of the tried spots (not random)
+        if (best) {
+          placed.push({ x: best.x, y: best.y, r, layer, kind });
+          return best;
+        }
+
+        // Absolute worst-case (should never happen unless placed is empty and tries=0)
+        const x = rand(xMin, xMax);
+        const y = rand(yMin, yMax);
+        placed.push({ x, y, r, layer, kind });
+        return { x, y };
+      }
+
+    const stones = Math.floor(rand(4, 6));
+    const corals = Math.floor(rand(3, 6));
+
+    // Stones
+    for (let i = 0; i < stones; i++) {
+      const depth = rand(0.40, 0.90);
+      const layer = depth < 0.55 ? "back" : (depth < 0.78 ? "mid" : "front");
+
+      const scale = rand(0.5, 1.25) * lerp(0.5, 1.25, depth);
+      const baseR = 40 * scale;
+      const lumps = [];
+
+      const lumpCount = Math.floor(rand(4, 7));
+      for (let k = 0; k < lumpCount; k++) {
+        const a = (k / lumpCount) * Math.PI * 2 + rand(-0.2, 0.2);
+        lumps.push({
+          a,
+          rMul: rand(0.75, 1.05),
+          xMul: rand(0.45, 0.65),
+          yMul: rand(0.18, 0.32)
+        });
+      }
+
+      const stoneR = baseR * 1.15; // claim a little extra space than the visual blob
+      const pos = findSpot(
+        stoneR, layer, "stone",
+        w * 0.08, w * 0.92,
+        floorY - bandH * 0.25, floorY + bandH * 0.12
+      );
+
+      decor.push({
+        kind: "stone",
+        x: pos.x,
+        y: pos.y,
+        scale,
+        depth,
+        layer,
+        stone: { baseR, lumps }
+      });
+    }
+
+    // Coral
+    for (let i = 0; i < corals; i++) {
+      const depth = rand(0.45, 0.92);
+      const layer = depth < 0.6 ? "back" : (depth < 0.8 ? "mid" : "front");
+
+      const scale = rand(0.75, 1.35) * lerp(0.75, 1.3, depth);
+      const height = 270 * scale;
+      const width = 40 * scale;
+
+      const branches = [];
+      const branchCount = Math.floor(rand(3, 8));
+      for (let k = 0; k < branchCount; k++) {
+        const t = (k + 1) / (branchCount + 1);
+        const y = -height * t;
+        const dir = k % 2 === 0 ? 1 : -1;
+
+        const bx = dir * width * rand(0.35, 0.75);
+        const by = y - height * rand(0.08, 0.16);
+
+        branches.push({ y, bx, by, tipR: 6 * scale });
+      }
+
+      // Coral needs a BIG spacing radius because it’s tall and has arms
+      const coralR = width * 2.2; 
+
+      const pos = findSpot(
+        coralR, layer, "coral",
+        w * 0.12, w * 0.88,
+        floorY - bandH * 0.12, floorY + bandH * 0.06
+      );
+
+      decor.push({
+        kind: "coral",
+        x: pos.x,
+        y: pos.y,
+        scale,
+        depth,
+        layer,
+        coral: { height, width, branches }
+      });
+    }
+  }
 
   // =============================
   // Sprite loading
@@ -949,6 +1229,80 @@
     ctx.restore();
   }
 
+  function drawGravel() {
+    if (!gravelCanvas) return;
+    ctx.drawImage(gravelCanvas, 0, 0);
+  }
+
+  function drawStone(d) {
+    const s = d.stone;
+    const baseR = s.baseR;
+
+    ctx.save();
+    ctx.translate(d.x, d.y);
+
+    const shade = lerp(1, 1, d.depth);
+    ctx.fillStyle = `rgba(55, 75, 95, ${1 * shade})`;
+
+    ctx.beginPath();
+    for (const L of s.lumps) {
+      const r = baseR * L.rMul;
+      const x = Math.cos(L.a) * baseR * L.xMul;
+      const y = Math.sin(L.a) * baseR * L.yMul;
+      ctx.moveTo(x + r, y);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+    }
+    ctx.fill();
+
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = "rgba(255,255,255,1)";
+    ctx.beginPath();
+    ctx.ellipse(-baseR * 0.25, -baseR * 0.18, baseR * 0.45, baseR * 0.28, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawCoral(d) {
+    const c = d.coral;
+
+    ctx.save();
+    ctx.translate(d.x, d.y);
+
+    const alpha = lerp(0.45, 0.92, d.depth);
+    ctx.strokeStyle = `rgba(255, 120, 160, ${1 * alpha})`;
+    ctx.lineWidth = 5 * d.scale;
+    ctx.lineCap = "round";
+
+    // Main stem
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -c.height);
+    ctx.stroke();
+
+    // Branches
+    for (const b of c.branches) {
+      ctx.beginPath();
+      ctx.moveTo(0, b.y);
+      ctx.lineTo(b.bx, b.by);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.20 * alpha;
+      ctx.fillStyle = "rgba(255,255,255,1)";
+      ctx.beginPath();
+      ctx.arc(b.bx, b.by, b.tipR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  function drawDecorItem(d) {
+    if (d.kind === "stone") drawStone(d);
+    else if (d.kind === "coral") drawCoral(d);
+  }
+
   function draw() {
     const w = W(), h = H();
     ctx.clearRect(0, 0, w, h);
@@ -956,12 +1310,32 @@
     drawAmbientBubbles();
     drawBubbles();
 
-    // Painter's algorithm by scale to fake depth (smaller drawn first).
-    const idx = fish.map((_, i) => i);
-    idx.sort((a, b) => fish[a].scale - fish[b].scale);
+    // Gravel is a cached background layer.
+    drawGravel();
 
-    for (const i of idx) {
-      const f = fish[i];
+    // Build render list: decor + fish, sort by depth (small = far)
+    const render = [];
+
+    for (const d of decor) {
+      render.push({ type: "decor", depth: d.depth, item: d });
+    }
+
+    for (let i = 0; i < fish.length; i++) {
+      // Use scale as fish depth (cleanest with your current setup)
+      render.push({ type: "fish", depth: fish[i].scale, item: fish[i] });
+    }
+
+    render.sort((a, b) => a.depth - b.depth);
+
+    // Draw in sorted order
+    for (const r of render) {
+      if (r.type === "decor") {
+        drawDecorItem(r.item);
+        continue;
+      }
+
+      // ---- existing fish draw code, but using r.item as f ----
+      const f = r.item;
 
       const drawW = frameW * f.scale;
       const drawH = frameH * f.scale;
@@ -1231,10 +1605,6 @@
 
   wrap.addEventListener("pointerdown", () => {
     applyAudioSettings();
-    ensureBgAudioStarted();
-  }, { passive: true });
-
-  wrap.addEventListener("pointerdown", () => {
     ensureBgAudioStarted();
   }, { passive: true });
 
