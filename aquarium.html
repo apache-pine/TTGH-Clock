@@ -934,7 +934,7 @@
 
     const w = W(), h = H();
     raysW = w * 5;   // match tank width for clean coverage
-    raysH = h * 2;   // match tank height
+    raysH = h * 3;   // match tank height
 
     raysCanvas = document.createElement("canvas");
     raysCanvas.width = raysW;
@@ -948,9 +948,9 @@
     const spacing = raysW / RAY_COUNT;
     const angle = .3; // radians-ish tilt; small negative = slant left
     c.save();
-    c.translate(raysW * 0.5, 0);
+    c.translate(raysW * 0.5, -h);
     c.rotate(angle);
-    c.translate(-raysW * 0.5, -200);
+    c.translate(-raysW * 0.5, 0);
 
     for (let i = -2; i < RAY_COUNT + 2; i++) {
       const x = i * spacing + spacing * 0.5;
