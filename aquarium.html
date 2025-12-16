@@ -468,9 +468,9 @@
   // =============================
   const RAYS_ENABLED = true;
   const RAY_ALPHA = 0.5;       // keep low
-  const RAY_SPEED = 4;          // px/sec drift
-  const RAY_COUNT = 12;          // how many bands across
-  const RAY_SOFTNESS = 200;     // blur-ish width in px (bigger = softer)
+  const RAY_SPEED = 3;          // px/sec drift
+  const RAY_COUNT = 40;          // how many bands across
+  const RAY_SOFTNESS = 250;     // blur-ish width in px (bigger = softer)
   let rayT = 0;
 
   let raysCanvas = null;
@@ -933,8 +933,8 @@
     if (!RAYS_ENABLED) return;
 
     const w = W(), h = H();
-    raysW = w * 1.5;   // match tank width for clean coverage
-    raysH = h + 200;   // match tank height
+    raysW = w * 5;   // match tank width for clean coverage
+    raysH = h * 2;   // match tank height
 
     raysCanvas = document.createElement("canvas");
     raysCanvas.width = raysW;
@@ -948,7 +948,7 @@
     const spacing = raysW / RAY_COUNT;
     const angle = .3; // radians-ish tilt; small negative = slant left
     c.save();
-    c.translate(raysW * 0.5, 0);
+    c.translate(raysW * 0.5, 200);
     c.rotate(angle);
     c.translate(-raysW * 0.5, -200);
 
