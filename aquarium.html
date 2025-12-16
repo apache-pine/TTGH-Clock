@@ -16,6 +16,10 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
 
+    body.bg-light {
+      background: #cfe7ff; /* light slate/sky */
+    }
+
     /* Main aquarium frame with rounded corners, gradient water, and drop shadow. */
     #wrap {
       width: min(1100px, 96vw);
@@ -223,6 +227,11 @@
         <label for="sfx-vol">SFX Vol</label>
         <input id="sfx-vol" type="range" min="0" max="100" value="60">
       </div>
+      <div class="settings-header">Page Background</div>
+      <div class="settings-row">
+        <label for="bg-theme">Theme</label>
+        <button id="bg-theme" type="button">Light</button>
+      </div>
     </div>
 
     <div id="count-hover-zone"><span id="fish-left">0</span></div>
@@ -242,6 +251,7 @@
   // Countdown Settings (Pacific)
   // =============================
   const SETTINGS_KEY = "aquariumEndTimeSettings";
+  const BG_THEME_KEY = "aquariumPageBgTheme"; // "dark" | "light"
   const DEFAULT_HOME_MINUTES = 17 * 60; // 17:00 default end time
   const AUDIO_KEY = "aquariumAudioSettings";
   const DEFAULT_AUDIO = {
@@ -364,9 +374,29 @@
     }
   }
 
+  function loadBgTheme() {
+    try {
+      const v = localStorage.getItem(BG_THEME_KEY);
+      return (v === "light" || v === "dark") ? v : "dark";
+    } catch {
+      return "dark";
+    }
+  }
+
+  function applyBgTheme(theme) {
+    document.body.classList.toggle("bg-light", theme === "light");
+  }
+
+  function saveBgTheme(theme) {
+    localStorage.setItem(BG_THEME_KEY, theme);
+  }
+
   function saveAudioSettings(s) {
     localStorage.setItem(AUDIO_KEY, JSON.stringify(s));
   }
+
+  let bgTheme = loadBgTheme();
+  applyBgTheme(bgTheme);
 
   // =============================
   // Config (Aquarium)
@@ -934,7 +964,7 @@
 
     const w = W(), h = H();
     raysW = w * 5;   // match tank width for clean coverage
-    raysH = h * 3;   // match tank height
+    raysH = h * 5;   // match tank height
 
     raysCanvas = document.createElement("canvas");
     raysCanvas.width = raysW;
@@ -948,7 +978,7 @@
     const spacing = raysW / RAY_COUNT;
     const angle = .3; // radians-ish tilt; small negative = slant left
     c.save();
-    c.translate(raysW * 0.5, -h);
+    c.translate(raysW * 0.5, -h * 1.5);
     c.rotate(angle);
     c.translate(-raysW * 0.5, 0);
 
@@ -1617,6 +1647,8 @@
   const sfxMuteBtn = document.getElementById("sfx-mute");
   const sfxVolSlider = document.getElementById("sfx-vol");
 
+  const bgThemeBtn = document.getElementById("bg-theme");
+
   function openSettingsPanel() {
     const pac = getPacificComponents();
     const { tomorrowKey } = getPacificTodayAndTomorrowKeys();
@@ -1624,6 +1656,9 @@
 
     homeTimeInput.value = minutesToTimeString(s.homeMinutes);
     homeDaySelect.value = (s.targetDate === tomorrowKey) ? "tomorrow" : "today";
+
+    // reflect page bg toggle state
+    bgThemeBtn.textContent = (bgTheme === "light") ? "Dark" : "Light";
 
     applyAudioSettings();
     ensureBgAudioStarted();
@@ -1684,6 +1719,15 @@
       // If this fails, it’ll usually be because user gesture hasn’t happened yet.
     }
   }
+
+  bgThemeBtn.addEventListener("click", () => {
+    bgTheme = (bgTheme === "light") ? "dark" : "light";
+    applyBgTheme(bgTheme);
+    saveBgTheme(bgTheme);
+
+    // button text shows what you'll switch to next
+    bgThemeBtn.textContent = (bgTheme === "light") ? "Dark" : "Light";
+  });
 
   wrap.addEventListener("pointerdown", () => {
     applyAudioSettings();
